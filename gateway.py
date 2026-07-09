@@ -4,6 +4,8 @@ from curl_cffi import requests
 from flask import Flask, request, Response, stream_with_context
 import logging
 
+import threading
+
 # 关闭 Flask 默认在控制台疯狂输出访问日志，保持代理引擎日志干净
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
@@ -18,6 +20,14 @@ PROXIES = {
     "http": "http://proxy:proxypass888@127.0.0.1:7920",
     "https": "http://proxy:proxypass888@127.0.0.1:7920"
 }
+
+# 线程本地存储，用于复用 curl_cffi Session，大幅降低 TLS 握手延迟
+thread_local = threading.local()
+
+def get_session():
+    if not hasattr(thread_local, "session"):
+        thread_local.session = requests.Session(impersonate="chrome", proxies=PROXIES)
+    return thread_local.session
 
 @app.route('/v1/chat/completions', methods=['POST'])
 @app.route('/zen/v1/chat/completions', methods=['POST'])
@@ -50,14 +60,13 @@ def proxy_chat():
         }
 
         print("[Gateway] 收到客户端请求，正在通过底层无缝隧道转发...", flush=True)
-        # 将请求透传给官方接口，通过本地 SOCKS5 发送
-        resp = requests.post(
+        # 将请求透传给官方接口，通过本地 SOCKS5 发送（复用 Session）
+        session = get_session()
+        resp = session.post(
             'https://opencode.ai/zen/v1/chat/completions',
             json=data,
             headers=headers,
-            proxies=PROXIES,
-            stream=is_stream,
-            impersonate="chrome"
+            stream=is_stream
         )
 
         if is_stream:
