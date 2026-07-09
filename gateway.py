@@ -63,7 +63,7 @@ def proxy_chat():
         if is_stream:
             # 核心逆向逻辑 3: SSE 流式数据替换模型名后抛回给客户端
             def generate():
-                for chunk in resp.iter_content(chunk_size=None):
+                for chunk in resp.iter_content(chunk_size=1024):
                     if chunk:
                         # 核心逆向逻辑 4: 伪装返回值里的模型名称
                         chunk = chunk.replace(b'mimo-v2.5-free', original_model.encode('utf-8'))
