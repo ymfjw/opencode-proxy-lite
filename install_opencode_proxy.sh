@@ -21,35 +21,20 @@ echo "[*] 正在安装底层系统依赖 (openvpn, vnstat, python3, venv)..."
 apt-get update
 apt-get install -y openvpn vnstat python3 python3-pip python3-venv curl
 
-# 2. 准备目录并拷贝文件
-echo "[*] 正在创建工作目录并拉取项目文件..."
+# 2. 准备目录并从 GitHub 拉取最新代码（始终覆盖，确保版本最新）
+echo "[*] 正在创建工作目录并从 GitHub 拉取最新项目文件..."
 mkdir -p /opt/proxy_lite
-cd /opt/proxy_lite
 
-# 支持从 GitHub 自动拉取代码
-if [ ! -f "lite_manager.py" ]; then
-    echo "[*] 未检测到本地源码，正在尝试从 GitHub 拉取代码..."
-    
-    # 这里的占位符将在上传 GitHub 时由您自行确定
-    REPO_URL="https://github.com/ymfjw/opencode-proxy-lite.git"
-    
-    if [[ "$REPO_URL" == *"YOUR_GITHUB_USERNAME"* ]]; then
-        echo "[-] 错误：请先在脚本中配置您的 GitHub 仓库地址 (REPO_URL)！"
-        exit 1
-    fi
-    
-    # 拉取代码到临时目录并移动出来
-    git clone "$REPO_URL" /tmp/opencode_repo
-    cp -r /tmp/opencode_repo/* /opt/proxy_lite/
-    cp /opt/proxy_lite/traffic.sh /usr/local/bin/traffic 2>/dev/null || true
-    chmod +x /opt/proxy_lite/*.py
-    chmod +x /usr/local/bin/traffic 2>/dev/null || true
-    rm -rf /tmp/opencode_repo
-else
-    # 如果已经有文件，直接走本地流程
-    cp lite_manager.py proxy_server.py gateway.py /opt/proxy_lite/
-    chmod +x /opt/proxy_lite/*.py
-fi
+REPO_URL="https://github.com/ymfjw/opencode-proxy-lite.git"
+rm -rf /tmp/opencode_repo
+git clone "$REPO_URL" /tmp/opencode_repo
+cp -r /tmp/opencode_repo/* /opt/proxy_lite/
+chmod +x /opt/proxy_lite/*.py 2>/dev/null || true
+# 安装流量监控工具
+cp /opt/proxy_lite/traffic.sh /usr/local/bin/traffic 2>/dev/null || true
+chmod +x /usr/local/bin/traffic 2>/dev/null || true
+rm -rf /tmp/opencode_repo
+echo "[+] 项目文件已更新至最新版本"
 
 # 3. 安装 traffic 监控脚本
 if [ -f "traffic.sh" ]; then
