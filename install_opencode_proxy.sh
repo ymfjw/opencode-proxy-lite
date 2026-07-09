@@ -66,15 +66,10 @@ python3 -m venv /opt/proxy_lite/venv
 /opt/proxy_lite/venv/bin/pip install --upgrade pip
 /opt/proxy_lite/venv/bin/pip install flask curl_cffi
 
-# 5. 交互式配置访问密钥
+# 5. 自动配置访问密钥
 echo "[*] ========================================"
-read -p "请输入您要设置的 API 访问密钥 (留空则自动生成一个安全的随机密钥): " USER_API_KEY
-if [ -z "$USER_API_KEY" ]; then
-    USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
-    echo "[*] 已为您自动生成安全 API 密钥: $USER_API_KEY"
-else
-    echo "[*] 已记录您自定义的 API 密钥"
-fi
+USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
+echo "[*] 已为您自动生成安全 API 密钥: $USER_API_KEY"
 
 # 6. 配置 Systemd 守护服务
 echo "[*] 正在配置开机自启系统服务 proxy-lite.service..."
