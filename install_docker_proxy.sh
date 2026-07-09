@@ -48,10 +48,10 @@ else
 fi
 
 # 4. 配置 Python 独立虚拟环境 (隔离系统包，用于 Lite Manager)
-echo "[*] 正在初始化 Python 虚拟环境并安装专属依赖..."
+echo "[*] 3. 初始化 Python 虚拟环境并安装核心依赖 (极速异步网关)..."
 python3 -m venv /opt/proxy_lite/venv
 /opt/proxy_lite/venv/bin/pip install --upgrade pip
-/opt/proxy_lite/venv/bin/pip install requests schedule
+/opt/proxy_lite/venv/bin/pip install requests schedule flask curl_cffi fastapi uvicorn
 
 # 5. 配置 Lite Manager 系统服务
 echo "[*] 正在配置开机自启系统服务 lite-manager.service..."
@@ -62,15 +62,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
 WorkingDirectory=/opt/proxy_lite
-# 启动前自动清理残留隧道
-ExecStartPre=/bin/bash -c 'pkill -f "openvpn.*tun[0-9]" || true'
-# 使用独立虚拟环境启动主调度器
+ExecStartPre=/bin/bash -c "pkill -f 'openvpn.*tun[0-9]' || true"
 ExecStart=/opt/proxy_lite/venv/bin/python -u lite_manager.py
 Restart=always
 RestartSec=5
-# 解除进程限制，应对高并发
 LimitNOFILE=65535
 
 [Install]
@@ -81,29 +77,7 @@ systemctl daemon-reload
 systemctl enable lite-manager.service
 systemctl restart lite-manager.service
 
-# 7. 配置 Docker Compose 容器集群
-echo "[*] 正在配置 Docker 容器网关 (forever359/opencodefree:v1)..."
-cat > /opt/proxy_lite/docker-compose.yml << EOF
-services:
-  opencodefree:
-    image: forever359/opencodefree:v1
-    container_name: opencodefree
-    restart: always
-    network_mode: host
-    environment:
-      - HTTP_PROXY=socks5://proxy:proxypass888@127.0.0.1:7920
-      - HTTPS_PROXY=socks5://proxy:proxypass888@127.0.0.1:7920
-      - ALL_PROXY=socks5://proxy:proxypass888@127.0.0.1:7920
-      - NO_PROXY=localhost,127.0.0.1
-EOF
-
-cd /opt/proxy_lite
-docker compose down 2>/dev/null || true
-docker compose up -d
-
-# ================================================================
 # 8. 强制安装 Nginx (用于拦截并修复 /v1/models 强制显示 deepseek 的问题)
-# ================================================================
 echo "[*] 正在安装配置 Nginx 本地网关 (接管 80 端口)..."
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
@@ -186,7 +160,7 @@ echo "=========================================="
 echo "  🎉 OpenCode 代理网关 (极致速度版) - 部署全部完成！"
 echo "=========================================="
 echo "  API 接口地址: ${FINAL_URL:-http://<你的VPS公网IP>/v1/chat/completions}"
-echo "  Docker 镜像自带的默认鉴权密钥: sk-mimo (请在客户端使用此密钥)"
+echo "  默认鉴权密钥: sk-mimo (请在客户端使用此密钥)"
 echo "=========================================="
 echo "💡 客户端配置示例："
 echo "   Base URL: $(echo "${FINAL_URL:-http://<你的VPS公网IP>/v1/chat/completions}" | sed 's|/chat/completions||')"
@@ -195,8 +169,7 @@ echo "   Model:    mimo-v2.5-pro"
 echo "=========================================="
 echo "💡 常用维护命令："
 echo "   查看 Lite Manager 日志: journalctl -u lite-manager.service -f"
-echo "   查看 Docker 网关日志:   cd /opt/proxy_lite && docker compose logs -f"
-echo "   重启服务:               systemctl restart lite-manager.service && cd /opt/proxy_lite && docker compose restart"
+echo "   重启服务:               systemctl restart lite-manager.service"
 echo "   查看流量:               traffic"
 echo "   更新证书:               certbot renew"
 echo "=========================================="
