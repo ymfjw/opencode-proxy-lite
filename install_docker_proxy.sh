@@ -18,8 +18,10 @@ echo "[*] ========================================"
 
 # 1. 安装系统级依赖
 echo "[*] 正在安装底层系统依赖 (docker, openvpn, vnstat, python3, venv)..."
-apt-get update
-apt-get install -y docker.io docker-compose-v2 openvpn vnstat python3 python3-pip python3-venv curl
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+apt-get update -yq
+apt-get install -yq docker.io docker-compose-v2 openvpn vnstat python3 python3-pip python3-venv curl
 
 # 2. 准备目录并从 GitHub 拉取最新代码
 echo "[*] 正在创建工作目录并从 GitHub 拉取最新项目文件..."
@@ -103,7 +105,9 @@ docker compose up -d
 # 8. 强制安装 Nginx (用于拦截并修复 /v1/models 强制显示 deepseek 的问题)
 # ================================================================
 echo "[*] 正在安装配置 Nginx 本地网关 (接管 80 端口)..."
-apt-get install -y nginx certbot python3-certbot-nginx
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+apt-get install -yq nginx certbot python3-certbot-nginx
 
 # 写入默认 HTTP Nginx 代理配置 (包含模型列表拦截)
 cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
@@ -134,13 +138,17 @@ NGINXEOF
 
 ln -sf /etc/nginx/sites-available/opencode-proxy /etc/nginx/sites-enabled/opencode-proxy
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+
+echo "[*] 测试 Nginx 配置..."
+nginx -t || { echo "[!] Nginx 配置存在错误！"; exit 1; }
+systemctl reload nginx || systemctl restart nginx
 
 echo ""
 echo "[*] ========================================="
 echo "[*] 可选步骤: 配置 HTTPS (需要您已有域名并解析到本机 IP)"
 echo "[*] ========================================="
-read -p "是否现在配置 HTTPS？(y/N): " SETUP_HTTPS < /dev/tty
+echo -n "是否现在配置 HTTPS？(y/N): " > /dev/tty
+read SETUP_HTTPS < /dev/tty
 SETUP_HTTPS=$(echo "$SETUP_HTTPS" | tr '[:upper:]' '[:lower:]')
 
 if [ "$SETUP_HTTPS" = "y" ] || [ "$SETUP_HTTPS" = "yes" ]; then
