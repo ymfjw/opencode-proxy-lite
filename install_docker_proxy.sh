@@ -51,18 +51,7 @@ python3 -m venv /opt/proxy_lite/venv
 /opt/proxy_lite/venv/bin/pip install --upgrade pip
 /opt/proxy_lite/venv/bin/pip install requests schedule
 
-# 5. 交互式配置访问密钥
-# 注意: 通过 /dev/tty 读取键盘输入，避免 curl|bash 管道占用 stdin 导致的崩溃
-echo "[*] ========================================"
-read -p "请输入您要设置的 API 密钥 (留空则自动生成随机密钥): " USER_API_KEY < /dev/tty
-if [ -z "$USER_API_KEY" ]; then
-    USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
-    echo "[*] 已自动生成安全 API 密钥: $USER_API_KEY"
-else
-    echo "[*] 已使用您自定义的 API 密钥"
-fi
-
-# 6. 配置 Lite Manager 系统服务
+# 5. 配置 Lite Manager 系统服务
 echo "[*] 正在配置开机自启系统服务 lite-manager.service..."
 cat << EOF > /etc/systemd/system/lite-manager.service
 [Unit]
@@ -104,9 +93,6 @@ services:
       - HTTPS_PROXY=socks5://proxy:proxypass888@127.0.0.1:7920
       - ALL_PROXY=socks5://proxy:proxypass888@127.0.0.1:7920
       - NO_PROXY=localhost,127.0.0.1
-      - AUTH_KEY=$USER_API_KEY
-      - API_KEY=$USER_API_KEY
-      - AUTHORIZATION=$USER_API_KEY
 EOF
 
 cd /opt/proxy_lite
@@ -114,8 +100,42 @@ docker compose down 2>/dev/null || true
 docker compose up -d
 
 # ================================================================
-# 8. 可选：自动配置 Nginx + Certbot 实现 HTTPS 访问
+# 8. 强制安装 Nginx (用于拦截并修复 /v1/models 强制显示 deepseek 的问题)
 # ================================================================
+echo "[*] 正在安装配置 Nginx 本地网关 (接管 80 端口)..."
+apt-get install -y nginx certbot python3-certbot-nginx
+
+# 写入默认 HTTP Nginx 代理配置 (包含模型列表拦截)
+cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
+server {
+    listen 80;
+    server_name _;
+
+    # 核心拦截逻辑：修复 Docker 内置只能获取到 deepseek 模型的硬编码问题
+    location /v1/models {
+        default_type application/json;
+        return 200 '{"object":"list","data":[{"id":"mimo-v2.5-pro","object":"model","created":1686935002,"owned_by":"opencode"},{"id":"mimo-v2.5-free","object":"model","created":1686935002,"owned_by":"opencode"}]}';
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+    }
+}
+NGINXEOF
+
+ln -sf /etc/nginx/sites-available/opencode-proxy /etc/nginx/sites-enabled/opencode-proxy
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+
 echo ""
 echo "[*] ========================================="
 echo "[*] 可选步骤: 配置 HTTPS (需要您已有域名并解析到本机 IP)"
@@ -128,36 +148,11 @@ if [ "$SETUP_HTTPS" = "y" ] || [ "$SETUP_HTTPS" = "yes" ]; then
 
     if [ -z "$USER_DOMAIN" ]; then
         echo "[!] 域名为空，跳过 HTTPS 配置。"
+        FINAL_URL="http://<你的VPS公网IP>/v1/chat/completions"
     else
-        echo "[*] 正在安装 Nginx 和 Certbot..."
-        apt-get install -y nginx certbot python3-certbot-nginx
-
-        # 写入 Nginx 反向代理配置（先用 HTTP，certbot 会自动升级为 HTTPS）
-        cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
-server {
-    listen 80;
-    server_name $USER_DOMAIN;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        # SSE 流式响应支持
-        proxy_set_header Connection '';
-        proxy_buffering off;
-        proxy_cache off;
-        chunked_transfer_encoding on;
-    }
-}
-NGINXEOF
-
-        # 启用站点
-        ln -sf /etc/nginx/sites-available/opencode-proxy /etc/nginx/sites-enabled/opencode-proxy
-        rm -f /etc/nginx/sites-enabled/default
-        nginx -t && systemctl reload nginx
+        # 针对域名更新 Nginx 配置
+        sed -i "s/server_name _;/server_name $USER_DOMAIN;/" /etc/nginx/sites-available/opencode-proxy
+        systemctl reload nginx
 
         echo "[*] 正在通过 Certbot 自动申请 Let's Encrypt 证书..."
         certbot --nginx -d "$USER_DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect
@@ -167,13 +162,13 @@ NGINXEOF
             FINAL_URL="https://$USER_DOMAIN/v1/chat/completions"
         else
             echo "[!] ⚠️  证书申请失败，请检查域名 DNS 是否已正确解析到本机 IP。"
-            echo "[!]     您仍然可以通过 HTTP 访问: http://$USER_DOMAIN:8080/v1/chat/completions"
-            FINAL_URL="http://$USER_DOMAIN:8080/v1/chat/completions"
+            echo "[!]     您仍然可以通过 HTTP 访问: http://$USER_DOMAIN/v1/chat/completions"
+            FINAL_URL="http://$USER_DOMAIN/v1/chat/completions"
         fi
     fi
 else
     echo "[*] 跳过 HTTPS 配置，您可以之后手动运行 certbot 来配置。"
-    FINAL_URL="http://<你的VPS公网IP>:8080/v1/chat/completions"
+    FINAL_URL="http://<你的VPS公网IP>/v1/chat/completions"
 fi
 
 # ================================================================
@@ -183,12 +178,12 @@ echo ""
 echo "=========================================="
 echo "  🎉 OpenCode 代理网关 (极致速度版) - 部署全部完成！"
 echo "=========================================="
-echo "  API 接口地址: ${FINAL_URL:-http://<你的VPS公网IP>:8080/v1/chat/completions}"
-echo "  专属鉴权密钥: $USER_API_KEY"
+echo "  API 接口地址: ${FINAL_URL:-http://<你的VPS公网IP>/v1/chat/completions}"
+echo "  Docker 镜像自带的默认鉴权密钥: sk-mimo (请在客户端使用此密钥)"
 echo "=========================================="
 echo "💡 客户端配置示例："
-echo "   Base URL: $(echo "${FINAL_URL:-http://<你的VPS公网IP>:8080/v1/chat/completions}" | sed 's|/chat/completions||')"
-echo "   API Key:  $USER_API_KEY"
+echo "   Base URL: $(echo "${FINAL_URL:-http://<你的VPS公网IP>/v1/chat/completions}" | sed 's|/chat/completions||')"
+echo "   API Key:  sk-mimo"
 echo "   Model:    mimo-v2.5-pro"
 echo "=========================================="
 echo "💡 常用维护命令："
