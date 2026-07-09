@@ -106,19 +106,87 @@ systemctl daemon-reload
 systemctl enable proxy-lite.service
 systemctl restart proxy-lite.service
 
-echo "[*] ========================================"
-echo "[+] 安装及部署全部完成！"
-echo "[+] 您的 API 网关现已在公网的 8080 端口启动"
-echo "[+] 接口地址: http://<你的VPS公网IP>:8080/v1/chat/completions"
-echo "[+] 您的专属鉴权密钥 (API Key): $USER_API_KEY"
-echo "[*] ========================================"
+# ================================================================
+# 7. 可选：自动配置 Nginx + Certbot 实现 HTTPS 访问
+# ================================================================
+echo ""
+echo "[*] ========================================="
+echo "[*] 可选步骤: 配置 HTTPS (需要您已有域名并解析到本机 IP)"
+echo "[*] ========================================="
+read -p "是否现在配置 HTTPS？(y/N): " SETUP_HTTPS < /dev/tty
+SETUP_HTTPS=$(echo "$SETUP_HTTPS" | tr '[:upper:]' '[:lower:]')
+
+if [ "$SETUP_HTTPS" = "y" ] || [ "$SETUP_HTTPS" = "yes" ]; then
+    read -p "请输入您的域名 (例如 api.example.com): " USER_DOMAIN < /dev/tty
+
+    if [ -z "$USER_DOMAIN" ]; then
+        echo "[!] 域名为空，跳过 HTTPS 配置。"
+    else
+        echo "[*] 正在安装 Nginx 和 Certbot..."
+        apt-get install -y nginx certbot python3-certbot-nginx
+
+        # 写入 Nginx 反向代理配置（先用 HTTP，certbot 会自动升级为 HTTPS）
+        cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
+server {
+    listen 80;
+    server_name $USER_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        # SSE 流式响应支持
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+    }
+}
+NGINXEOF
+
+        # 启用站点
+        ln -sf /etc/nginx/sites-available/opencode-proxy /etc/nginx/sites-enabled/opencode-proxy
+        rm -f /etc/nginx/sites-enabled/default
+        nginx -t && systemctl reload nginx
+
+        echo "[*] 正在通过 Certbot 自动申请 Let's Encrypt 证书..."
+        certbot --nginx -d "$USER_DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect
+
+        if [ $? -eq 0 ]; then
+            echo "[+] ✅ HTTPS 配置成功！"
+            FINAL_URL="https://$USER_DOMAIN/v1/chat/completions"
+        else
+            echo "[!] ⚠️  证书申请失败，请检查域名 DNS 是否已正确解析到本机 IP。"
+            echo "[!]     您仍然可以通过 HTTP 访问: http://$USER_DOMAIN:8080/v1/chat/completions"
+            FINAL_URL="http://$USER_DOMAIN:8080/v1/chat/completions"
+        fi
+    fi
+else
+    echo "[*] 跳过 HTTPS 配置，您可以之后手动运行 certbot 来配置。"
+    FINAL_URL="http://<你的VPS公网IP>:8080/v1/chat/completions"
+fi
+
+# ================================================================
+# 8. 完成汇总
+# ================================================================
+echo ""
+echo "=========================================="
+echo "  🎉 OpenCode 代理网关 - 部署全部完成！"
+echo "=========================================="
+echo "  API 接口地址: ${FINAL_URL:-http://<你的VPS公网IP>:8080/v1/chat/completions}"
+echo "  专属鉴权密钥: $USER_API_KEY"
+echo "=========================================="
 echo "💡 客户端配置示例："
-echo "   Base URL: http://<你的VPS公网IP>:8080/v1"
+echo "   Base URL: $(echo "${FINAL_URL:-http://<你的VPS公网IP>:8080/v1/chat/completions}" | sed 's|/chat/completions||')"
 echo "   API Key:  $USER_API_KEY"
 echo "   Model:    mimo-v2.5-pro"
-echo "========================================="
+echo "=========================================="
 echo "💡 常用维护命令："
-echo "   - 查看引擎及 AI 网关日志：journalctl -u proxy-lite.service -f"
-echo "   - 重启引擎系统：systemctl restart proxy-lite.service"
-echo "   - 查看双网卡流量：直接在终端输入 traffic 即可"
-echo "========================================="
+echo "   查看日志:    journalctl -u proxy-lite.service -f"
+echo "   重启服务:    systemctl restart proxy-lite.service"
+echo "   查看流量:    traffic"
+echo "   更新证书:    certbot renew"
+echo "=========================================="
