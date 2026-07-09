@@ -40,8 +40,8 @@ if [ ! -f "lite_manager.py" ]; then
     
     # 拉取代码到临时目录并移动出来
     git clone "$REPO_URL" /tmp/opencode_repo
-    cp -r /tmp/opencode_repo/*.py /opt/proxy_lite/
-    cp /tmp/opencode_repo/traffic.sh /usr/local/bin/traffic 2>/dev/null || true
+    cp -r /tmp/opencode_repo/* /opt/proxy_lite/
+    cp /opt/proxy_lite/traffic.sh /usr/local/bin/traffic 2>/dev/null || true
     chmod +x /opt/proxy_lite/*.py
     chmod +x /usr/local/bin/traffic 2>/dev/null || true
     rm -rf /tmp/opencode_repo
@@ -66,10 +66,16 @@ python3 -m venv /opt/proxy_lite/venv
 /opt/proxy_lite/venv/bin/pip install --upgrade pip
 /opt/proxy_lite/venv/bin/pip install flask curl_cffi
 
-# 5. 自动配置访问密钥
+# 5. 交互式配置访问密钥
+# 注意: 通过 /dev/tty 读取键盘输入，避免 curl|bash 管道占用 stdin 导致的崩溃
 echo "[*] ========================================"
-USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
-echo "[*] 已为您自动生成安全 API 密钥: $USER_API_KEY"
+read -p "请输入您要设置的 API 密钥 (留空则自动生成随机密钥): " USER_API_KEY < /dev/tty
+if [ -z "$USER_API_KEY" ]; then
+    USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
+    echo "[*] 已自动生成安全 API 密钥: $USER_API_KEY"
+else
+    echo "[*] 已使用您自定义的 API 密钥"
+fi
 
 # 6. 配置 Systemd 守护服务
 echo "[*] 正在配置开机自启系统服务 proxy-lite.service..."
