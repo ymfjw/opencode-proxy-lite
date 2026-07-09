@@ -66,9 +66,19 @@ python3 -m venv /opt/proxy_lite/venv
 /opt/proxy_lite/venv/bin/pip install --upgrade pip
 /opt/proxy_lite/venv/bin/pip install flask curl_cffi
 
-# 5. 配置 Systemd 守护服务
+# 5. 交互式配置访问密钥
+echo "[*] ========================================"
+read -p "请输入您要设置的 API 访问密钥 (留空则自动生成一个安全的随机密钥): " USER_API_KEY
+if [ -z "$USER_API_KEY" ]; then
+    USER_API_KEY=$(cat /proc/sys/kernel/random/uuid | sed 's/-//g')
+    echo "[*] 已为您自动生成安全 API 密钥: $USER_API_KEY"
+else
+    echo "[*] 已记录您自定义的 API 密钥"
+fi
+
+# 6. 配置 Systemd 守护服务
 echo "[*] 正在配置开机自启系统服务 proxy-lite.service..."
-cat << 'EOF' > /etc/systemd/system/proxy-lite.service
+cat << EOF > /etc/systemd/system/proxy-lite.service
 [Unit]
 Description=Proxy Core Engine with OpenCode AI Gateway
 After=network.target
@@ -77,6 +87,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/proxy_lite
+Environment="PROXY_API_KEY=$USER_API_KEY"
 # 启动前自动清理残留隧道
 ExecStartPre=/bin/bash -c 'pkill -f openvpn.*tun[0-9] || true'
 # 使用独立虚拟环境启动主调度器
@@ -98,7 +109,13 @@ echo "[*] ========================================"
 echo "[+] 安装及部署全部完成！"
 echo "[+] 您的 API 网关现已在公网的 8080 端口启动"
 echo "[+] 接口地址: http://<你的VPS公网IP>:8080/v1/chat/completions"
+echo "[+] 您的专属鉴权密钥 (API Key): $USER_API_KEY"
 echo "[*] ========================================"
+echo "💡 客户端配置示例："
+echo "   Base URL: http://<你的VPS公网IP>:8080/v1"
+echo "   API Key:  $USER_API_KEY"
+echo "   Model:    mimo-v2.5-pro"
+echo "========================================="
 echo "💡 常用维护命令："
 echo "   - 查看引擎及 AI 网关日志：journalctl -u proxy-lite.service -f"
 echo "   - 重启引擎系统：systemctl restart proxy-lite.service"

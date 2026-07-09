@@ -10,6 +10,9 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 
+# 获取系统的专属访问密钥 (如果未配置，则开放裸奔，但脚本现在会强制配置)
+EXPECTED_API_KEY = os.environ.get('PROXY_API_KEY', '')
+
 # 底层控制器 HTTP 代理端口 (兼容 curl_cffi 模拟 Chrome)
 PROXIES = {
     "http": "http://proxy:proxypass888@127.0.0.1:7920",
@@ -20,6 +23,15 @@ PROXIES = {
 @app.route('/zen/v1/chat/completions', methods=['POST'])
 def proxy_chat():
     try:
+        # ========================================================
+        # 安全防御: API 访问鉴权
+        # ========================================================
+        if EXPECTED_API_KEY:
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith(f'Bearer {EXPECTED_API_KEY}'):
+                print(f"[Security] 拦截到非法请求: 密钥错误 ({request.remote_addr})", flush=True)
+                return {"error": {"message": "Invalid API Key. Please provide the correct Authorization: Bearer <key>.", "type": "AuthenticationError"}}, 401
+
         data = request.get_json(silent=True) or {}
         original_model = data.get('model', 'mimo-v2.5-pro')
         
