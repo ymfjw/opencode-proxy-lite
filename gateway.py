@@ -35,7 +35,7 @@ async def startup_event():
 async def shutdown_event():
     global client_session
     if client_session:
-        client_session.close()
+        await client_session.close()
 
 @app.post("/v1/chat/completions")
 @app.post("/zen/v1/chat/completions")
@@ -75,7 +75,8 @@ async def proxy_chat(request: Request):
             'https://opencode.ai/zen/v1/chat/completions',
             json=data,
             headers=headers,
-            stream=is_stream
+            stream=is_stream,
+            timeout=180
         )
 
         if is_stream:
