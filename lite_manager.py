@@ -281,9 +281,9 @@ def maintain_pool():
                     current_process = None
                     current_ip = ""
                     current_country = ""
-                elif time.time() - last_auto_rotate > 300:
+                elif time.time() - last_auto_rotate > 600:
                     last_auto_rotate = time.time()
-                    print(f"[*] ⏱️ 触发 5 分钟自动零停机无缝轮换，正在后台建立备用隧道...", flush=True)
+                    print(f"[*] ⏱️ 触发 10 分钟自动零停机无缝轮换，正在后台建立备用隧道...", flush=True)
                     if current_ip: dead_ips.add(current_ip)
                     needs_dispatch = True
                     old_process = current_process
