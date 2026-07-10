@@ -84,7 +84,10 @@ export NEEDRESTART_MODE=a
 apt-get install -yq nginx certbot python3-certbot-nginx
 
 # 写入默认 HTTP Nginx 代理配置 (包含模型列表拦截)
-cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
+if grep -q "ssl_certificate" /etc/nginx/sites-available/opencode-proxy 2>/dev/null; then
+    echo "[*] 检测到已存在 HTTPS 配置，跳过覆盖..."
+else
+    cat > /etc/nginx/sites-available/opencode-proxy << NGINXEOF
 server {
     listen 80;
     server_name _;
@@ -108,6 +111,7 @@ server {
     }
 }
 NGINXEOF
+fi
 
 ln -sf /etc/nginx/sites-available/opencode-proxy /etc/nginx/sites-enabled/opencode-proxy
 rm -f /etc/nginx/sites-enabled/default
